@@ -89,12 +89,13 @@ class GandiTests(unittest.TestCase):
         images = self.driver.list_images(loc)
         images = [x for x in images if x.name.lower().startswith('debian')]
         img = list(filter(lambda x: '5' in x.name, images))[0]
+        farm = 'default'
 
         # Get a configuration size
         size = self.driver.list_sizes()[0]
         node = self.driver.create_node(name=self.node_name, login=login,
                                        password=passwd, image=img,
-                                       location=loc, size=size)
+                                       location=loc, size=size, farm=farm)
         self.assertEqual(node.name, self.node_name)
 
     def test_create_volume(self):
