@@ -124,7 +124,8 @@ class GandiNodeDriver(BaseGandiDriver, NodeDriver):
             extra={
                 'ai_active': vm.get('ai_active'),
                 'datacenter_id': vm.get('datacenter_id'),
-                'description': vm.get('description')
+                'description': vm.get('description'),
+                'farm': vm.get('farm')
             }
         )
 
@@ -262,6 +263,9 @@ class GandiNodeDriver(BaseGandiDriver, NodeDriver):
         :keyword    keypairs: IDs of keypairs or Keypairs object
         :type       keypairs: list of ``int`` or :class:`.KeyPair`
 
+        :keyword    farm: Name of the farm this node belongs to (optional)
+        :type       farm: ``str``
+
         :rtype: :class:`Node`
         """
 
@@ -306,6 +310,11 @@ class GandiNodeDriver(BaseGandiDriver, NodeDriver):
             'bandwidth': int(size.bandwidth),
             'ip_version': kwargs.get('inet_family', 4),
         }
+
+        if kwargs.get('farm'):
+            vm_spec.update({
+                'farm': kwargs['farm'],
+            })
 
         if kwargs.get('login') and kwargs.get('password'):
             vm_spec.update({
