@@ -110,9 +110,9 @@ class GandiNodeDriver(BaseGandiDriver, NodeDriver):
             for ip in ips:
                 if ip.get('vm_id') == vm.get('id'):
                     if ip.get('type') == 'public':
-                        vm['public_ips'].append(ip)
+                        vm['public_ips'].append(ip.get('ip',None))
                     else:
-                        vm['private_ips'].append(ip)
+                        vm['private_ips'].append(ip.get('ip',None))
 
         nodes = self._to_nodes(vms)
         return nodes
@@ -134,9 +134,9 @@ class GandiNodeDriver(BaseGandiDriver, NodeDriver):
         for ip in ips:
             if ip.get('vm_id') == int(node_id):
                 if ip.get('type') == 'public':
-                    vm['public_ips'].append(ip)
+                    vm['public_ips'].append(ip.get('ip',None))
                 else:
-                    vm['private_ips'].append(ip)
+                    vm['private_ips'].append(ip.get('ip',None))
 
         node = self._to_node(vm)
         return node
@@ -855,6 +855,9 @@ class GandiNodeDriver(BaseGandiDriver, NodeDriver):
                 extra={'reverse': ip['reverse']}
             )
             ips.append(new_ip)
+        extra = {'bandwidth': iface['bandwidth']}
+        if iface['vlan'] is not None:
+            extra.update({'vlan': iface['vlan']['name']})
         return NetworkInterface(
             iface['id'],
             NODE_STATE_MAP.get(
@@ -865,7 +868,7 @@ class GandiNodeDriver(BaseGandiDriver, NodeDriver):
             driver=self.connection.driver,
             ips=ips,
             node_id=iface.get('vm_id'),
-            extra={'bandwidth': iface['bandwidth']},
+            extra=extra,
         )
 
     def _to_ifaces(self, ifaces):
