@@ -209,5 +209,5 @@ class Vlan(BaseObject):
         return (
             ('<Vlan: id=%s, name=%s, state=%s, subnet=%s, driver=%s, '
              'gateway=%s ...>')
-            % (self.id, self.name, self.state, self.subnet, self.driver,
+            % (self.id, self.name, self.state, self.subnet, self.driver.name,
                self.gateway))
