@@ -47,7 +47,7 @@ INSTANCE_TYPES = {
         'cpu': 1,
         'memory': 256,
         'disk': 3,
-        'bandwidth': 10240,
+        'bandwidth': 102400,
     },
     'medium': {
         'id': 'medium',
@@ -55,7 +55,7 @@ INSTANCE_TYPES = {
         'cpu': 1,
         'memory': 1024,
         'disk': 20,
-        'bandwidth': 10240,
+        'bandwidth': 102400,
     },
     'large': {
         'id': 'large',
@@ -63,7 +63,7 @@ INSTANCE_TYPES = {
         'cpu': 2,
         'memory': 2048,
         'disk': 50,
-        'bandwidth': 10240,
+        'bandwidth': 102400,
     },
     'x-large': {
         'id': 'x-large',
@@ -71,7 +71,7 @@ INSTANCE_TYPES = {
         'cpu': 4,
         'memory': 4096,
         'disk': 100,
-        'bandwidth': 10240,
+        'bandwidth': 102400,
     },
 }
 
@@ -337,37 +337,7 @@ class GandiNodeDriver(BaseGandiDriver, NodeDriver):
         :rtype:   ``list`` of :class:`NodeSize`
         """
         account = self.connection.request('hosting.account.info').object
-        if account.get('rating_enabled'):
-            # This account use new rating model
-            return self.list_instance_type(location)
-        # Look for available shares, and return a list of share_definition
-        available_res = account['resources']['available']
-
-        if available_res['shares'] == 0:
-            return None
-        else:
-            share_def = account['share_definition']
-            available_cores = available_res['cores']
-            # 0.75 core given when creating a server
-            max_core = int(available_cores + 0.75)
-            shares = []
-            if available_res['servers'] < 1:
-                # No server quota, no way
-                return shares
-            for i in range(1, max_core + 1):
-                share = {id: i}
-                share_is_available = True
-                for k in ['memory', 'disk', 'bandwidth']:
-                    if share_def[k] * i > available_res[k]:
-                        # We run out for at least one resource inside
-                        share_is_available = False
-                    else:
-                        share[k] = share_def[k] * i
-                if share_is_available:
-                    nb_core = i
-                    shares.append(self._to_size(nb_core, share))
-            return shares
-
+        return self.list_instance_type(location)
 
     def list_locations(self):
         """
@@ -784,7 +754,12 @@ class GandiNodeDriver(BaseGandiDriver, NodeDriver):
                 'ai_active': vm.get('ai_active'),
                 'datacenter_id': vm.get('datacenter_id'),
                 'description': vm.get('description'),
-                'farm': vm.get('farm')
+                'farm': vm.get('farm'),
+                'memory': vm.get('memory'),
+                'ifaces': vm.get('ifaces_id', []),
+                'disks': vm.get('disks_id', []),
+                'cores': vm.get('cores'),
+                'date_created': vm.get('date_created'),
             }
         )
 
