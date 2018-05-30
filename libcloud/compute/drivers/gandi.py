@@ -394,8 +394,12 @@ class GandiNodeDriver(BaseGandiDriver, NodeDriver):
         disk_param = {
             'name': name,
             'size': int(size),
-            'datacenter_id': int(location.id)
+            'datacenter_id': 4
         }
+
+        if location:
+            disk_param.update({'datacenter_id': int(location.id)})
+
         if snapshot:
             op = self.connection.request('hosting.disk.create_from',
                                          disk_param, int(snapshot.id))
@@ -473,6 +477,19 @@ class GandiNodeDriver(BaseGandiDriver, NodeDriver):
             iface['ips'] = list(
                 filter(lambda i: i['iface_id'] == iface['id'], ips))
         return self._to_ifaces(ifaces)
+
+    def ex_get_interface(self, iface_id):
+        """
+        Specific method to get a network interface's info
+
+        :param  iface_id: The ID of the interface
+        :type   ifac_id: ``int``
+
+        :return:  An GandiNetworkInterface object for the interface
+        :rtype:   :class:`GandiNetworkInterface`
+        """
+        res = self.connection.request('hosting.iface.info', iface_id)
+        return self._to_iface(res.object)
 
     def ex_node_attach_interface(self, node, iface):
         """
@@ -683,7 +700,9 @@ class GandiNodeDriver(BaseGandiDriver, NodeDriver):
 
         op = self.connection.request('hosting.vlan.create', vlan_params)
         if self._wait_operation(op.object['id']):
-            vlan = self._vlan_info(op.object['id'])
+            op = self.connection.request('operation.info',
+                    int(op.object['id']))
+            vlan = self._vlan_info(op.object['params']['vlan_id'])
             return self._to_vlan(vlan)
         return None
 
@@ -830,7 +849,9 @@ class GandiNodeDriver(BaseGandiDriver, NodeDriver):
                 extra={'reverse': ip['reverse']}
             )
             ips.append(new_ip)
-        extra = {'bandwidth': iface['bandwidth']}
+        extra = {'bandwidth': iface['bandwidth'],
+                 'vlan': iface['vlan'],
+                 'type': iface['type']}
         if iface['vlan'] is not None:
             extra.update({'vlan': iface['vlan']['name']})
         return NetworkInterface(
