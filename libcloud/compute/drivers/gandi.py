@@ -213,6 +213,9 @@ class GandiNodeDriver(BaseGandiDriver, NodeDriver):
         :keyword    password: password for user that'll be created (required)
         :type       password: ``str``
 
+        :keyword    interfaces: list of interfaces to attach to the vm
+        :type       interfaces: ``dict``
+
         :keyword    inet_family: version of ip to use, default 4 (optional)
         :type       inet_family: ``int``
 
@@ -267,6 +270,52 @@ class GandiNodeDriver(BaseGandiDriver, NodeDriver):
             'ip_version': kwargs.get('inet_family', 4),
         }
 
+        ifaces = kwargs.get('interfaces', {})
+        public_interfaces = ifaces.get('publics', None)
+        private_interfaces = ifaces.get('privates', None)
+        vlans = self.ex_list_vlans()
+        only_private = False
+
+        if ifaces != {}:
+            if public_interfaces:
+                if len(public_interfaces) > 0:
+                    public_ipv4 = public_interfaces[0].get('ipv4', None)
+                    if public_ipv4:
+                        def_iface_version = kwargs.get('inet_family', 4)
+                    else:
+                        def_iface_version = kwargs.get('inet_family', 6)
+
+                    public_interfaces.pop(0)
+
+                    vm_def_iface_options = {'ip_version': def_iface_version}
+                    vm_spec.update(vm_def_iface_options)
+
+            elif private_interfaces:
+                # no public interfaces by default
+                if len(private_interfaces) > 0:
+                    vlan_name = private_interfaces[0].get('vlan')
+                    ipv4 = private_interfaces[0].get('ipv4', None)
+
+                    if vlan_name:
+                        vlan = self._get_by_name(vlan_name, vlans)
+                        iface = self.ex_create_iface(location=location,
+                                                     vlan=vlan,
+                                                     ip_address=ipv4)
+
+                        vm_spec.update({'iface_id': int(iface.id)})
+                        private_interfaces.pop(0)
+                        only_private = True
+
+            else:
+                raise GandiException(
+                    1021, "'interfaces' not empty but no 'publics' or \
+                           'privates' defined")
+        else:
+            # default one ipv6 public interfaces
+            def_iface_version = kwargs.get('inet_family', 4)
+            vm_def_iface_options = {'ip_version': def_iface_version}
+            vm_spec.update(vm_def_iface_options)
+
         if kwargs.get('farm'):
             vm_spec.update({
                 'farm': kwargs['farm'],
@@ -283,16 +332,58 @@ class GandiNodeDriver(BaseGandiDriver, NodeDriver):
 
         # Call create_from helper api. Return 3 operations : disk_create,
         # iface_create,vm_create
-        (op_disk, op_iface, op_vm) = self.connection.request(
-            'hosting.vm.create_from',
-            vm_spec, disk_spec, src_disk_id
-        ).object
+        if only_private:
+            (op_disk, op_vm) = self.connection.request(
+                'hosting.vm.create_from',
+                vm_spec, disk_spec, src_disk_id
+            ).object
+        else:
+            (op_disk, op_iface, op_vm) = self.connection.request(
+                'hosting.vm.create_from',
+                vm_spec, disk_spec, src_disk_id
+            ).object
 
         # We wait for vm_create to finish
         if self._wait_operation(op_vm['id']):
             # after successful operation, get ip information
             # thru first interface
             node = self._node_info(op_vm['vm_id'])
+
+            # create and attach optional interfaces
+            if public_interfaces:
+                for iface in public_interfaces:
+                    ipv4_address = iface.get('ipv4', None)
+
+                    if ipv4_address:
+                        ip_version = 4
+                    else:
+                        ip_version = 6
+
+                    iface = self.ex_create_interface(location=location,
+                                                 ip_version=ip_version)
+                    if iface:
+                        self.ex_node_attach_interface(node=self._to_node(node),
+                                                      iface=iface)
+
+            if private_interfaces:
+                for iface in private_interfaces:
+                    ip_address = iface.get('ipv4', None)
+                    ip_version = 4
+
+                    if ip_address and ip_address == 'auto':
+                        ip_address = None
+
+                    vlan = self._get_by_name(iface.get('vlan', None),
+                                             vlans)
+
+                    iface = self.ex_create_interface(location=location,
+                                                 ip_version=ip_version,
+                                                 ip_address=ip_address,
+                                                 vlan=vlan)
+                    if iface:
+                        self.ex_node_attach_interface(node=self._to_node(node),
+                                                      iface=iface)
+
             ifaces = node.get('ifaces')
             if len(ifaces) > 0:
                 ips = ifaces[0].get('ips')
@@ -357,7 +448,7 @@ class GandiNodeDriver(BaseGandiDriver, NodeDriver):
         :return: A list of volume objects.
         :rtype: ``list`` of :class:`StorageVolume`
         """
-        res = self.connection.request('hosting.disk.list', {})
+        res = self.connection.request('hosting.disk.list')
         return self._to_volumes(res.object)
 
     def ex_get_volume(self, volume_id):
@@ -813,8 +904,7 @@ class GandiNodeDriver(BaseGandiDriver, NodeDriver):
                 'memory': vm.get('memory'),
                 'ifaces': vm.get('ifaces_id', []),
                 'disks': vm.get('disks_id', []),
-                'cores': vm.get('cores'),
-                'date_created': vm.get('date_created'),
+                'cores': vm.get('cores')
             }
         )
 
@@ -885,11 +975,13 @@ class GandiNodeDriver(BaseGandiDriver, NodeDriver):
                 extra={'reverse': ip['reverse']}
             )
             ips.append(new_ip)
+
         extra = {'bandwidth': iface['bandwidth'],
-                 'vlan': iface['vlan'],
                  'type': iface['type']}
+
         if iface['vlan'] is not None:
             extra.update({'vlan': iface['vlan']['name']})
+
         return NetworkInterface(
             iface['id'],
             NODE_STATE_MAP.get(
@@ -947,3 +1039,7 @@ class GandiNodeDriver(BaseGandiDriver, NodeDriver):
 
     def _to_vlans(self, data):
         return [self._to_vlan(vlan) for vlan in data]
+
+    def _get_by_name(self, name, entities):
+        find = [x for x in entities if x.name == name]
+        return find[0] if find else None
