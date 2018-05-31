@@ -398,6 +398,9 @@ class GandiMockRatingHttp(BaseGandiMockHttp):
         body = self.fixtures.load('account_info_rating.xml')
         return (httplib.OK, body, {}, httplib.responses[httplib.OK])
 
+    def _xmlrpc__hosting_vlan_list(self, method, url, body, headers):
+        body = self.fixtures.load('vlan_list.xml')
+        return (httplib.OK, body, {}, httplib.responses[httplib.OK])
 
 if __name__ == '__main__':
     sys.exit(unittest.main())
