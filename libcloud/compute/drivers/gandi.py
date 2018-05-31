@@ -277,6 +277,7 @@ class GandiNodeDriver(BaseGandiDriver, NodeDriver):
                 'login': kwargs['login'],
                 'password': kwargs['password'],  # TODO : use NodeAuthPassword
             })
+
         if keypair_ids:
             vm_spec['keys'] = keypair_ids
 
@@ -464,6 +465,38 @@ class GandiNodeDriver(BaseGandiDriver, NodeDriver):
         if self._wait_operation(op.object['id']):
             return True
         return False
+
+    def ex_create_interface(self, location,
+        ip_version=4, ip_address=None, vlan=None, bandwidth=102400.0):
+        """
+        Specific method to create a network interface
+
+        :rtype: :class:`GandiNetworkInterface`
+        """
+
+        iface_param = {
+            'datacenter_id': int(location.id),
+            'bandwidth': bandwidth,
+        }
+
+        if vlan is not None:
+            iface_param.update({
+                'vlan': int(vlan.id),
+                })
+            if ip_address is not None:
+                iface_param.update({
+                    'ip': ip_address
+                    })
+        else:
+            iface_param.update({
+                'ip_version': int(ip_version)
+                })
+
+        op = self.connection.request('hosting.iface.create', iface_param)
+        if self._wait_operation(op.object['id']):
+            iface = self._iface_info(op.object['iface_id'])
+            return self._to_iface(iface)
+        return None
 
     def ex_list_interfaces(self):
         """
@@ -756,6 +789,9 @@ class GandiNodeDriver(BaseGandiDriver, NodeDriver):
 
     def _vlan_info(self, id):
         return self._resource_info('vlan', id)
+
+    def _iface_info(self, id):
+        return self._resource_info('iface', id)
 
     # Generic methods for driver
     def _to_node(self, vm):
