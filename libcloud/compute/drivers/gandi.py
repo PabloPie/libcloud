@@ -158,25 +158,72 @@ class GandiNodeDriver(BaseGandiDriver, NodeDriver):
             return True
         return False
 
-    def destroy_node(self, node):
+    def destroy_node(self, node, cascade=False):
         """
         Destroy a node.
 
         :param  node: Node object to destroy
         :type   node: :class:`Node`
 
+        :param  cascade: Deletes the node's disks and ifaces if set to true
+        :type   cascade: ``bool``
+
         :return:  True if successful
         :rtype:   ``bool``
         """
         vm = self._node_info(node.id)
+
         if vm['state'] == 'running':
             # Send vm_stop and wait for accomplish
             op_stop = self.connection.request('hosting.vm.stop', int(node.id))
             if not self._wait_operation(op_stop.object['id']):
                 raise GandiException(1010, 'vm.stop failed')
-            # Delete
+
+        # Get interfaces and ips associated with the node
+        ifaces = vm.get('ifaces')
+        ifaces_objects = []
+
+        disks = vm.get('disks')
+        # disks_objects = []
+
+        if len(ifaces) > 0:
+            for iface in ifaces:
+                ips = iface.get('ips')
+
+                if iface['type'] == 'public':
+                    # public ips are auto deleted when wm is deleted ??
+                    ifaces_objects.append(self._to_iface(iface))
+                    for address in ips:
+                        if address['ip'] not in node.public_ips:
+                            node.public_ips.append(address['ip'])
+
+                elif iface['type'] == 'private':
+                    # get iface object if iface type is private
+                    ifaces_objects.append(self._to_iface(iface))
+
+                    for address in ips:
+                        node.private_ips.append(address['ip'])
+
+        # Delete the node
         op = self.connection.request('hosting.vm.delete', int(node.id))
         if self._wait_operation(op.object['id']):
+
+            # Delete private interfaces if cascade requested and needed
+            # first interface is always deleted at vm suppression.
+            if cascade and len(ifaces_objects) > 1:
+                for iface in ifaces_objects[1:]:
+                    op = self.connection.request('hosting.iface.delete',
+                                                 int(iface.id))
+                    if self._wait_operation(op.object['id']):
+                        continue
+
+            if cascade and len(disks) > 1:
+                for disk in disks:
+                    if not disk['is_boot_disk']:
+                        op = self.connection.request('hosting.disk.delete',
+                                                     int(disk['id']))
+                        if self._wait_operation(op.object['id']):
+                            continue
             return True
         return False
 
@@ -258,7 +305,8 @@ class GandiNodeDriver(BaseGandiDriver, NodeDriver):
 
         disk_spec = {
             'datacenter_id': dc_id,
-            'name': 'disk_%s' % kwargs['name']
+            'name': 'disk_%s' % kwargs['name'],
+            'size': int(size.disk) * 1024
         }
 
         vm_spec = {
@@ -485,7 +533,7 @@ class GandiNodeDriver(BaseGandiDriver, NodeDriver):
         """
         disk_param = {
             'name': name,
-            'size': int(size),
+            'size': int(size) * 1024,
             'datacenter_id': 4
         }
 
@@ -739,7 +787,7 @@ class GandiNodeDriver(BaseGandiDriver, NodeDriver):
         """
         params = {}
         if new_size:
-            params.update({'size': new_size})
+            params.update({'size': new_size * 1024})
         if new_name:
             params.update({'name': new_name})
         op = self.connection.request('hosting.disk.update',
