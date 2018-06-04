@@ -346,7 +346,7 @@ class GandiNodeDriver(BaseGandiDriver, NodeDriver):
 
                     if vlan_name:
                         vlan = self._get_by_name(vlan_name, vlans)
-                        iface = self.ex_create_iface(location=location,
+                        iface = self.ex_create_interface(location=location,
                                                      vlan=vlan,
                                                      ip_address=ipv4)
 
