@@ -448,8 +448,8 @@ class GandiNodeDriver(BaseGandiDriver, NodeDriver):
         :keyword    location: Which data center to filter a images in.
         :type       location: :class:`NodeLocation`
 
-        :return:  List of GCENodeImage objects
-        :rtype:   ``list`` of :class:`GCENodeImage`
+        :return:    List of NodeImage objects
+        :rtype:     ``list`` of :class:`NodeImage`
         """
         try:
             if location:
@@ -489,14 +489,17 @@ class GandiNodeDriver(BaseGandiDriver, NodeDriver):
         res = self.connection.request('hosting.datacenter.list')
         return [self._to_loc(l) for l in res.object]
 
-    def list_volumes(self):
+    def list_volumes(self, location=None):
         """
         Return a list of volumes.
 
         :return: A list of volume objects.
         :rtype: ``list`` of :class:`StorageVolume`
         """
-        res = self.connection.request('hosting.disk.list')
+        filtering = {}
+        if location:
+            filtering = {'datacenter_id': int(location.id)}
+        res = self.connection.request('hosting.disk.list', filtering)
         return self._to_volumes(res.object)
 
     def ex_get_volume(self, volume_id):
