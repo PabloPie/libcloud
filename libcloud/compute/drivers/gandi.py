@@ -184,46 +184,46 @@ class GandiNodeDriver(BaseGandiDriver, NodeDriver):
         ifaces_objects = []
 
         disks = vm.get('disks')
-        # disks_objects = []
+        disks_objects = []
 
-        if len(ifaces) > 0:
-            for iface in ifaces:
-                ips = iface.get('ips')
+        for iface in ifaces:
+            ips = iface.get('ips')
 
-                if iface['type'] == 'public':
-                    # public ips are auto deleted when wm is deleted ??
-                    ifaces_objects.append(self._to_iface(iface))
-                    for address in ips:
-                        if address['ip'] not in node.public_ips:
-                            node.public_ips.append(address['ip'])
+            if iface['type'] == 'public':
+                # public ips are auto deleted when vm is deleted ??
+                ifaces_objects.append(self._to_iface(iface))
+                for address in ips:
+                    if address['ip'] not in node.public_ips:
+                        node.public_ips.append(address['ip'])
 
-                elif iface['type'] == 'private':
-                    # get iface object if iface type is private
-                    ifaces_objects.append(self._to_iface(iface))
+            elif iface['type'] == 'private':
+                # get iface object if iface type is private
+                ifaces_objects.append(self._to_iface(iface))
 
-                    for address in ips:
-                        node.private_ips.append(address['ip'])
+                for address in ips:
+                    node.private_ips.append(address['ip'])
+
+        for disk in disks:
+            disks_objects.append(self._to_disk(disk))
 
         # Delete the node
         op = self.connection.request('hosting.vm.delete', int(node.id))
         if self._wait_operation(op.object['id']):
-
-            # Delete private interfaces if cascade requested and needed
+            if cascade:
+            # Delete private interfaces if cascade requested
             # first interface is always deleted at vm suppression.
-            if cascade and len(ifaces_objects) > 1:
                 for iface in ifaces_objects[1:]:
                     op = self.connection.request('hosting.iface.delete',
                                                  int(iface.id))
-                    if self._wait_operation(op.object['id']):
-                        continue
-
-            if cascade and len(disks) > 1:
-                for disk in disks:
-                    if not disk['is_boot_disk']:
+                    self._wait_operation(op.object['id'])
+            # Delete disks if cascade requested
+            # system disk is deleted with vm
+                for disk in disks_objects[1:]:
+                    if not disk.extra['is_boot_disk']:
                         op = self.connection.request('hosting.disk.delete',
-                                                     int(disk['id']))
-                        if self._wait_operation(op.object['id']):
-                            continue
+                                                     int(disk.id))
+                        self._wait_operation(op.object['id'])
+
             return True
         return False
 
@@ -319,40 +319,35 @@ class GandiNodeDriver(BaseGandiDriver, NodeDriver):
         }
 
         ifaces = kwargs.get('interfaces', {})
-        public_interfaces = ifaces.get('publics', None)
-        private_interfaces = ifaces.get('privates', None)
+        public_interfaces = ifaces.get('publics', [])
+        private_interfaces = ifaces.get('privates', [])
         vlans = self.ex_list_vlans()
-        only_private = False
 
         if ifaces != {}:
-            if public_interfaces:
-                if len(public_interfaces) > 0:
-                    public_ipv4 = public_interfaces[0].get('ipv4', None)
-                    if public_ipv4:
-                        def_iface_version = kwargs.get('inet_family', 4)
-                    else:
-                        def_iface_version = kwargs.get('inet_family', 6)
+            if len(public_interfaces) > 0:
+                public_ipv4 = public_interfaces[0].get('ipv4', None)
+                if public_ipv4:
+                    def_iface_version = kwargs.get('inet_family', 4)
+                else:
+                    def_iface_version = kwargs.get('inet_family', 6)
 
-                    public_interfaces.pop(0)
+                public_interfaces.pop(0)
 
-                    vm_def_iface_options = {'ip_version': def_iface_version}
-                    vm_spec.update(vm_def_iface_options)
+                vm_def_iface_options = {'ip_version': def_iface_version}
+                vm_spec.update(vm_def_iface_options)
 
-            elif private_interfaces:
-                # no public interfaces by default
-                if len(private_interfaces) > 0:
-                    vlan_name = private_interfaces[0].get('vlan')
-                    ipv4 = private_interfaces[0].get('ipv4', None)
+            elif len(private_interfaces) > 0:
+                vlan_name = private_interfaces[0].get('vlan')
+                ipv4 = private_interfaces[0].get('ipv4', None)
 
-                    if vlan_name:
-                        vlan = self._get_by_name(vlan_name, vlans)
-                        iface = self.ex_create_interface(location=location,
-                                                     vlan=vlan,
-                                                     ip_address=ipv4)
+                if vlan_name:
+                    vlan = self._get_by_name(vlan_name, vlans)
+                    iface = self.ex_create_interface(location=location,
+                                                 vlan=vlan,
+                                                 ip_address=ipv4)
 
-                        vm_spec.update({'iface_id': int(iface.id)})
-                        private_interfaces.pop(0)
-                        only_private = True
+                    vm_spec.update({'iface_id': int(iface.id)})
+                    private_interfaces.pop(0)
 
             else:
                 raise GandiException(
@@ -380,57 +375,47 @@ class GandiNodeDriver(BaseGandiDriver, NodeDriver):
 
         # Call create_from helper api. Return 3 operations : disk_create,
         # iface_create,vm_create
-        if only_private:
-            (op_disk, op_vm) = self.connection.request(
-                'hosting.vm.create_from',
-                vm_spec, disk_spec, src_disk_id
-            ).object
-        else:
-            (op_disk, op_iface, op_vm) = self.connection.request(
-                'hosting.vm.create_from',
-                vm_spec, disk_spec, src_disk_id
-            ).object
+        (op_disk, op_iface, op_vm) = self.connection.request(
+            'hosting.vm.create_from',
+            vm_spec, disk_spec, src_disk_id
+        ).object
 
         # We wait for vm_create to finish
         if self._wait_operation(op_vm['id']):
-            # after successful operation, get ip information
-            # thru first interface
+            # after successful creation, get the new vm
             node = self._node_info(op_vm['vm_id'])
 
             # create and attach optional interfaces
-            if public_interfaces:
-                for iface in public_interfaces:
-                    ipv4_address = iface.get('ipv4', None)
+            for iface in public_interfaces:
+                ipv4_address = iface.get('ipv4', None)
 
-                    if ipv4_address:
-                        ip_version = 4
-                    else:
-                        ip_version = 6
-
-                    iface = self.ex_create_interface(location=location,
-                                                 ip_version=ip_version)
-                    if iface:
-                        self.ex_node_attach_interface(node=self._to_node(node),
-                                                      iface=iface)
-
-            if private_interfaces:
-                for iface in private_interfaces:
-                    ip_address = iface.get('ipv4', None)
+                if ipv4_address:
                     ip_version = 4
+                else:
+                    ip_version = 6
+                iface = self.ex_create_interface(location=location,
+                                             ip_version=ip_version)
+                if iface:
+                    self.ex_node_attach_interface(node=self._to_node(node),
+                                                  iface=iface)
 
-                    if ip_address and ip_address == 'auto':
-                        ip_address = None
+            for iface in private_interfaces:
+                ip_address = iface.get('ipv4', None)
+                ip_version = 4
 
-                    vlan = self._get_by_name(iface.get('vlan', None),
-                                             vlans)
+                if ip_address and ip_address == 'auto':
+                    ip_address = None
 
-                    iface = self.ex_create_interface(location=location,
-                                                 ip_version=ip_version,
-                                                 ip_address=ip_address,
-                                                 vlan=vlan)
-                    if iface:
-                        self.ex_node_attach_interface(node=self._to_node(node),
-                                                      iface=iface)
+                vlan = self._get_by_name(iface.get('vlan', None),
+                                         vlans)
+
+                iface = self.ex_create_interface(location=location,
+                                             ip_version=ip_version,
+                                             ip_address=ip_address,
+                                             vlan=vlan)
+                if iface:
+                    self.ex_node_attach_interface(node=self._to_node(node),
+                                                  iface=iface)
 
             ifaces = node.get('ifaces')
             if len(ifaces) > 0:
@@ -875,9 +860,9 @@ class GandiNodeDriver(BaseGandiDriver, NodeDriver):
 
         op = self.connection.request('hosting.vlan.create', vlan_params)
         if self._wait_operation(op.object['id']):
-            op = self.connection.request('operation.info',
+            res = self.connection.request('operation.info',
                     int(op.object['id']))
-            vlan = self._vlan_info(op.object['params']['vlan_id'])
+            vlan = self._vlan_info(res.object['params']['vlan_id'])
             return self._to_vlan(vlan)
         return None
 
@@ -1000,7 +985,8 @@ class GandiNodeDriver(BaseGandiDriver, NodeDriver):
         )
 
     def _to_volume(self, disk):
-        extra = {'can_snapshot': disk['can_snapshot']}
+        extra = {'can_snapshot': disk['can_snapshot'],
+                 'is_boot_disk': disk['is_boot_disk']}
         return StorageVolume(
             id=disk['id'],
             name=disk['name'],
@@ -1059,7 +1045,8 @@ class GandiNodeDriver(BaseGandiDriver, NodeDriver):
             name=element['name'],
             driver=self.connection.driver,
             size=element['size'],
-            extra={'can_snapshot': element['can_snapshot']}
+            extra={'can_snapshot': element['can_snapshot'],
+                 'is_boot_disk': element['is_boot_disk']}
         )
         return disk
 
