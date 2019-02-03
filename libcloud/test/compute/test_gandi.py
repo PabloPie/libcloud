@@ -72,7 +72,7 @@ class GandiTests(unittest.TestCase):
         nodes = self.driver.list_nodes()
         test_node = list(filter(lambda x: x.state == NodeState.STOPPED,
                                 nodes))[0]
-        self.assertTrue(self.driver.destroy_node(test_node))
+        self.assertTrue(self.driver.destroy_node(test_node, True))
 
     def test_reboot_node(self):
         nodes = self.driver.list_nodes()
@@ -103,6 +103,55 @@ class GandiTests(unittest.TestCase):
         self.assertEqual(node.name, self.node_name)
         self.assertEqual(node.extra['farm'], self.farm_name)
         self.assertEqual(node.extra['datacenter_id'], int(loc.id))
+
+    def test_create_node_with_public_interfaces(self):
+        login = 'libcloud'
+        passwd = ''.join(random.choice(string.ascii_letters)
+                         for i in range(10))
+        farm = self.farm_name
+
+        # Get france datacenter
+        loc = list(filter(lambda x: 'france' in x.country.lower(),
+                          self.driver.list_locations()))[0]
+
+        # Get a debian image
+        images = self.driver.list_images(loc)
+        images = [x for x in images if x.name.lower().startswith('debian')]
+        img = list(filter(lambda x: '8' in x.name, images))[0]
+
+        # Get a configuration size
+        size = self.driver.list_sizes()[0]
+        interfaces = {'publics': [{'ipv4': 'auto'},{'ipv6': 'auto'}], 
+                      'privates': [{'vlan': self.vlan_name}]}
+        node = self.driver.create_node(name=self.node_name, login=login,
+                               password=passwd, image=img,
+                               location=loc, size=size, farm=farm,
+                               interfaces=interfaces)
+        self.assertEqual(node.name, self.node_name)
+
+    def test_create_node_with_private_interfaces(self):
+        login = 'libcloud'
+        passwd = ''.join(random.choice(string.ascii_letters)
+                         for i in range(10))
+        farm = self.farm_name
+
+        # Get france datacenter
+        loc = list(filter(lambda x: 'france' in x.country.lower(),
+                          self.driver.list_locations()))[0]
+
+        # Get a debian image
+        images = self.driver.list_images(loc)
+        images = [x for x in images if x.name.lower().startswith('debian')]
+        img = list(filter(lambda x: '8' in x.name, images))[0]
+
+        # Get a configuration size
+        size = self.driver.list_sizes()[0]
+        interfaces = {'privates': [{'vlan': self.vlan_name}]}
+        node = self.driver.create_node(name=self.node_name, login=login,
+                               password=passwd, image=img,
+                               location=loc, size=size, farm=farm,
+                               interfaces=interfaces)
+        self.assertEqual(node.name, self.node_name)
 
     def test_create_volume(self):
         loc = list(filter(lambda x: 'france' in x.country.lower(),
@@ -148,11 +197,19 @@ class GandiTests(unittest.TestCase):
         vlan = self.driver.ex_get_vlan(8352)
         self.assertTrue(vlan.name, self.vlan_name)
 
-    def text_ex_delete_vlan(self):
+    def test_ex_delete_vlan(self):
         vlans = self.driver.ex_list_vlans()
         test_vlan = list(filter(lambda x: x.name == self.vlan_name,
                                vlans))[0]
         self.assertTrue(self.driver.ex_delete_vlan(test_vlan))
+
+    def test_ex_create_interface(self):
+        dc = list(filter(lambda x: 'france' in x.country.lower(),
+                          self.driver.list_locations()))[0]
+        vlan = self.driver.ex_list_vlans()[0]
+        ip = "192.168.1.1"
+        iface = self.driver.ex_create_interface(location=dc,vlan=vlan)
+        self.assertTrue(iface)
 
     def test_ex_list_interfaces(self):
         ifaces = self.driver.ex_list_interfaces()
@@ -170,6 +227,27 @@ class GandiTests(unittest.TestCase):
         res = self.driver.ex_node_detach_interface(nodes[0], ifaces[0])
         self.assertTrue(res)
 
+    def test_ex_get_interface(self):
+        iface_id = "443397"
+        iface = self.driver.ex_get_interface(iface_id=iface_id)
+        self.assertEqual(iface_id,iface.id)
+
+    def test_ex_list_disk(self):
+        disks = self.driver.ex_list_disks()
+        self.assertTrue(len(disks) > 0)
+
+    def test_ex_node_attach_disk(self):
+        vm = self.driver.list_nodes()[0]
+        disk = self.driver.ex_list_disks()[0]
+        res = self.driver.ex_node_attach_disk(node=vm,disk=disk)
+        self.assertTrue(res)
+
+    def test_ex_node_detach_disk(self):
+        vm = self.driver.list_nodes()[0]
+        disk = self.driver.ex_list_disks()[0]
+        res = self.driver.ex_node_detach_disk(node=vm,disk=disk)
+        self.assertTrue(res)
+
     def test_ex_snapshot_disk(self):
         disks = self.driver.list_volumes()
         self.assertTrue(self.driver.ex_snapshot_disk(disks[2]))
@@ -177,7 +255,7 @@ class GandiTests(unittest.TestCase):
                           self.driver.ex_snapshot_disk, disks[6])
 
     def test_ex_update_disk(self):
-        disks = self.driver.list_volumes()
+        disks = self.driver.ex_list_disks()
         self.assertTrue(self.driver.ex_update_disk(disks[0], new_size=4096))
 
     def test_list_key_pairs(self):
@@ -304,6 +382,18 @@ class GandiMockHttp(BaseGandiMockHttp):
 
     def _xmlrpc__hosting_vm_iface_detach(self, method, url, body, headers):
         body = self.fixtures.load('iface_detach.xml')
+        return (httplib.OK, body, {}, httplib.responses[httplib.OK])
+
+    def _xmlrpc__hosting_iface_create(self, method, url, body, headers):
+        body = self.fixtures.load('iface_create.xml')
+        return (httplib.OK, body, {}, httplib.responses[httplib.OK])
+
+    def _xmlrpc__hosting_iface_info(self, method, url, body, headers):
+        body = self.fixtures.load('iface_info.xml')
+        return (httplib.OK, body, {}, httplib.responses[httplib.OK])
+
+    def _xmlrpc__hosting_iface_delete(self, method, url, body, headers):
+        body = self.fixtures.load('iface_delete.xml')
         return (httplib.OK, body, {}, httplib.responses[httplib.OK])
 
     def _xmlrpc__hosting_vm_disk_attach(self, method, url, body, headers):
