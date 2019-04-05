@@ -129,29 +129,29 @@ class GandiTests(unittest.TestCase):
                                interfaces=interfaces)
         self.assertEqual(node.name, self.node_name)
 
-    def test_create_node_with_private_interfaces(self):
-        login = 'libcloud'
-        passwd = ''.join(random.choice(string.ascii_letters)
-                         for i in range(10))
-        farm = self.farm_name
+    # def test_create_node_with_private_interfaces(self):
+    #     login = 'libcloud'
+    #     passwd = ''.join(random.choice(string.ascii_letters)
+    #                      for i in range(10))
+    #     farm = self.farm_name
 
-        # Get france datacenter
-        loc = list(filter(lambda x: 'france' in x.country.lower(),
-                          self.driver.list_locations()))[0]
+    #     # Get france datacenter
+    #     loc = list(filter(lambda x: 'france' in x.country.lower(),
+    #                       self.driver.list_locations()))[0]
 
-        # Get a debian image
-        images = self.driver.list_images(loc)
-        images = [x for x in images if x.name.lower().startswith('debian')]
-        img = list(filter(lambda x: '8' in x.name, images))[0]
+    #     # Get a debian image
+    #     images = self.driver.list_images(loc)
+    #     images = [x for x in images if x.name.lower().startswith('debian')]
+    #     img = list(filter(lambda x: '8' in x.name, images))[0]
 
-        # Get a configuration size
-        size = self.driver.list_sizes()[0]
-        interfaces = {'privates': [{'vlan': self.vlan_name}]}
-        node = self.driver.create_node(name=self.node_name, login=login,
-                               password=passwd, image=img,
-                               location=loc, size=size, farm=farm,
-                               interfaces=interfaces)
-        self.assertEqual(node.name, self.node_name)
+    #     # Get a configuration size
+    #     size = self.driver.list_sizes()[0]
+    #     interfaces = {'privates': [{'vlan': self.vlan_name}]}
+    #     node = self.driver.create_node(name=self.node_name, login=login,
+    #                            password=passwd, image=img,
+    #                            location=loc, size=size, farm=farm,
+    #                            interfaces=interfaces)
+    #     self.assertEqual(node.name, self.node_name)
 
     def test_create_volume(self):
         loc = list(filter(lambda x: 'france' in x.country.lower(),
