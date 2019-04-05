@@ -322,6 +322,7 @@ class GandiNodeDriver(BaseGandiDriver, NodeDriver):
         public_interfaces = ifaces.get('publics', [])
         private_interfaces = ifaces.get('privates', [])
         vlans = self.ex_list_vlans()
+        only_private = False
 
         if ifaces != {}:
             if len(public_interfaces) > 0:
@@ -345,10 +346,9 @@ class GandiNodeDriver(BaseGandiDriver, NodeDriver):
                     iface = self.ex_create_interface(location=location,
                                                  vlan=vlan,
                                                  ip_address=ipv4)
-
                     vm_spec.update({'iface_id': int(iface.id)})
                     private_interfaces.pop(0)
-
+                    only_private = True
             else:
                 raise GandiException(
                     1021, "'interfaces' not empty but no 'publics' or \
@@ -375,10 +375,17 @@ class GandiNodeDriver(BaseGandiDriver, NodeDriver):
 
         # Call create_from helper api. Return 3 operations : disk_create,
         # iface_create,vm_create
-        (op_disk, op_iface, op_vm) = self.connection.request(
-            'hosting.vm.create_from',
-            vm_spec, disk_spec, src_disk_id
-        ).object
+        if only_private:
+            print vm_spec
+            (op_disk, op_vm) = self.connection.request(
+                    'hosting.vm.create_from',
+                vm_spec, disk_spec, src_disk_id
+            ).object
+        else:
+            (op_disk, op_iface, op_vm) = self.connection.request(
+                'hosting.vm.create_from',
+                vm_spec, disk_spec, src_disk_id
+            ).object
 
         # We wait for vm_create to finish
         if self._wait_operation(op_vm['id']):
